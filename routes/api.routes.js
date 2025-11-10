@@ -27,4 +27,11 @@ router.get("/secure-data", verifyOrigin, verifyJWTToken, (req, res) => {
   return res.status(200).json(mockData);
 });
 
+router.get("/data/:id", verifyOrigin, verifyJWTToken, (req, res) => {
+  const { id } = req.params;
+
+  console.log("id ==> ", id);
+  return res.status(200).json(mockData);
+});
+
 export default router;

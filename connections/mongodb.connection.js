@@ -1,17 +1,33 @@
-import mongoose from "mongoose";
-import dotenv from "dotenv";
+import { MongoClient, ServerApiVersion } from "mongodb";
+import { config } from "dotenv";
+config({ path: "./config/.env", debug: false });
 
-dotenv.config();
+export let db;
+const uri = String(process.env.DB_URL);
 
-const connectDB = async () => {
+// Create a MongoClient with a MongoClientOptions object to set the Stable API version
+const client = new MongoClient(uri, {
+  serverApi: {
+    version: ServerApiVersion.v1,
+    strict: true,
+    deprecationErrors: true,
+  },
+});
+
+export default async function connectDB() {
   try {
-    const conn = await mongoose.connect(process.env.DB_URL);
+    if (!db) {
+      await client.connect();
+      db = client.db("Food_Lover");
+      await db.command({ ping: 1 });
 
-    console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
+      console.log(
+        "Pinged your deployment. You successfully connected to MongoDB!"
+      );
+    } else {
+      return db;
+    }
   } catch (error) {
-    console.error(`❌ MongoDB connection error: ${error.message}`);
-    process.exit(1);
+    console.log("Mongodb connection Error => ", error.message);
   }
-};
-
-export default connectDB;
+}
