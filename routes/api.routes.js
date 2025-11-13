@@ -54,6 +54,44 @@ router.get("/data/:id", verifyOrigin, verifyJWTToken, (req, res) => {
 
 export default router;
 
+router.get("/home-data", verifyOrigin, async (req, res, next) => {
+  try {
+    const response = await find({
+      data: {},
+      collectionName: "reviews",
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: response,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/home-others-data", verifyOrigin, async (req, res, next) => {
+  try {
+    const responseReviewers = await find({
+      data: {},
+      collectionName: "top_reviewers",
+    });
+
+    const responseFeedbacks = await find({
+      data: {},
+      collectionName: "feedbacks",
+    });
+
+    return res.status(200).json({
+      success: true,
+      topReviewers: responseReviewers,
+      usersFeedback: responseFeedbacks,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post(
   "/create/user",
   verifyOrigin,
@@ -297,12 +335,24 @@ router.get("/shows/all-comments", async (req, res, next) => {
   });
 });
 
-router.get("/shows/all-reviews", async (req, res, next) => {
+router.get("/shows/all-reviews", verifyOrigin, async (req, res, next) => {
   try {
     const reviews = await find({
       data: {},
       collectionName: "reviews",
     });
+
+    for (let review of reviews) {
+      let user = await findOne({
+        data: {
+          _id: new ObjectId(review.user),
+        },
+        collectionName: "users",
+      });
+
+      review.user = user;
+    }
+
     return res.status(200).json({
       success: true,
       data: reviews,
