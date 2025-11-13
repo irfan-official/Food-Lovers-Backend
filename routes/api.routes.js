@@ -157,6 +157,146 @@ router.post(
   }
 );
 
+router.post("/create/comment", async (req, res, next) => {
+  try {
+    let { name, email, reviewId, comment } = req.body;
+
+    name: name.trim();
+    email: email.trim();
+    comment: comment.trim();
+
+    if (!name || !email || !comment || !reviewId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Missing required fields" });
+    }
+
+    const user = await findOne({
+      data: { name, email },
+      collectionName: "users",
+    });
+
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+
+    const createdComment = await createOne({
+      data: new Comment({
+        user: new ObjectId(user._id),
+        review: new ObjectId(reviewId),
+        comment,
+      }),
+      collectionName: "comments",
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "comment created!",
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.put("/update/user", async (req, res, next) => {
+  try {
+    let { name, email, image } = req.body;
+
+    name = name.trim();
+    email = email.trim();
+    image = image.trim();
+
+    if (!name || !email || !image) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing required fields: name, email, and image are required",
+      });
+    }
+
+    const user = await findOne({
+      data: { name, email },
+      collectionName: "users",
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    const db = await connectDB();
+
+    // 4️⃣ Replace user fields
+    const updateResult = await db.collection("users").updateOne(
+      { _id: new ObjectId(user._id) }, // filter by unique _id
+      {
+        $set: {
+          name,
+          email,
+          image,
+          updatedAt: new Date().toISOString(), // optional: track updates
+        },
+      }
+    );
+
+    if (updateResult.modifiedCount === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "User update failed",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "User updated successfully",
+      data: {
+        _id: user._id,
+        name,
+        email,
+        image,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/shows/all-comments", async (req, res, next) => {
+  const { reviewId } = req.query;
+
+  if (!reviewId) {
+    return res.status(300).json({
+      success: false,
+      message: reviewId,
+    });
+  }
+
+  const comments = await find({
+    data: {
+      review: new ObjectId(reviewId),
+    },
+    collectionName: "comments",
+  });
+
+  console.log("comments ===> ", comments);
+
+  for (let comment of comments) {
+    let user = await findOne({
+      data: { _id: new ObjectId(comment.user) },
+      collectionName: "users",
+    });
+    comment.user = user;
+  }
+
+  return res.status(200).json({
+    success: true,
+    data: comments,
+  });
+});
+
 router.get("/shows/all-reviews", async (req, res, next) => {
   try {
     const reviews = await find({
@@ -173,7 +313,11 @@ router.get("/shows/all-reviews", async (req, res, next) => {
 });
 
 router.get("/shows/my-reviews", async (req, res, next) => {
-  const { name, email } = req.body;
+  let { name, email } = req.query;
+
+  name: name.trim();
+  email: email.trim();
+
   try {
     const user = await findOne({
       data: {
@@ -200,7 +344,11 @@ router.get("/shows/my-reviews", async (req, res, next) => {
 
 router.get("/shows/loved-reviews", async (req, res, next) => {
   try {
-    const { name, email } = req.query;
+    let { name, email } = req.query;
+
+    name: name.trim();
+    email: email.trim();
+
     const user = await findOne({
       data: {
         name,
@@ -208,6 +356,13 @@ router.get("/shows/loved-reviews", async (req, res, next) => {
       },
       collectionName: "users",
     });
+
+    if (!user) {
+      return res.status(200).json({
+        success: false,
+        message: "user not exist!",
+      });
+    }
 
     const reviews = await find({
       data: {
@@ -226,7 +381,10 @@ router.get("/shows/loved-reviews", async (req, res, next) => {
 
 router.post("/add/loved-reviews", async (req, res, next) => {
   try {
-    const { name, email, reviewId } = req.body;
+    let { name, email, reviewId } = req.body;
+
+    name: name.trim();
+    email: email.trim();
 
     const user = await findOne({
       data: { name, email },
@@ -244,7 +402,7 @@ router.post("/add/loved-reviews", async (req, res, next) => {
     const updateResult = await db
       .collection("reviews")
       .updateOne(
-        { _id: new ObjectId(reviewId) },
+        { _id: new ObjectId(reviewId), user: new ObjectId(user._id) },
         { $addToSet: { loved: new ObjectId(user._id) } }
       );
 
@@ -258,6 +416,102 @@ router.post("/add/loved-reviews", async (req, res, next) => {
     return res.status(200).json({
       success: true,
       message: "Review added to loved list successfully",
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete("/remove/loved-reviews", async (req, res, next) => {
+  try {
+    let { name, email, reviewId } = req.body;
+
+    name: name.trim();
+    email: email.trim();
+
+    const user = await findOne({
+      data: { name, email },
+      collectionName: "users",
+    });
+
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+
+    const db = await connectDB();
+
+    // 3️⃣ Remove user ObjectId from loved array
+    const updateResult = await db.collection("reviews").updateOne(
+      { _id: new ObjectId(reviewId), user: new ObjectId(user._id) },
+      { $pull: { loved: new ObjectId(user._id) } } // <-- use $pull instead of $addToSet
+    );
+
+    // 4️⃣ Check if anything was updated
+    if (updateResult.matchedCount === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Review not found" });
+    }
+
+    if (updateResult.modifiedCount === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "User was not in loved list or review already updated before.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "User removed from loved list successfully",
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete("/remove/reviews", async (req, res, next) => {
+  try {
+    let { name, email, reviewId } = req.body;
+
+    name: name.trim();
+    email: email.trim();
+
+    if (!name || !email || !reviewId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Missing required fields" });
+    }
+
+    const user = await findOne({
+      data: { name, email },
+      collectionName: "users",
+    });
+
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+
+    const db = await connectDB();
+
+    const deleteResult = await db.collection("reviews").deleteOne({
+      _id: new ObjectId(reviewId),
+      user: new ObjectId(user._id),
+    });
+
+    if (deleteResult.deletedCount === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Review not found or not owned by this user",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Review deleted successfully",
     });
   } catch (error) {
     next(error);

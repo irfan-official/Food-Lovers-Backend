@@ -33,24 +33,8 @@ class User {
     });
     Object.assign(this, {
       ...validData,
-      lovedReviews: [],
       createdAt: new Date().toISOString(),
     });
-  }
-  addLovedReviews(reviews) {
-    if (!(reviews instanceof ObjectId)) {
-      throw new TypeError("reviews must be a valid MongoDB ObjectId");
-    }
-    if (!this.lovedReviews.find((u) => u.equals(reviews))) {
-      this.lovedReviews.push(reviews);
-    }
-  }
-
-  removeLovedReviews(lovedReviews) {
-    if (!(lovedReviews instanceof ObjectId)) {
-      throw new TypeError("favorite user must be a valid MongoDB ObjectId");
-    }
-    this.lovedReviews = this.lovedReviews.filter((u) => !u.equals(reviews));
   }
 }
 
