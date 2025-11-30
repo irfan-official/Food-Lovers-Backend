@@ -56,14 +56,26 @@ export default router;
 
 router.get("/home-data", verifyOrigin, async (req, res, next) => {
   try {
-    const response = await find({
+    const reviews = await find({
       data: {},
       collectionName: "reviews",
+      options: { limit: 6 },
     });
+
+    for (let review of reviews) {
+      let user = await findOne({
+        data: {
+          _id: new ObjectId(review.user),
+        },
+        collectionName: "users",
+      });
+
+      review.user = user;
+    }
 
     return res.status(200).json({
       success: true,
-      data: response,
+      data: reviews,
     });
   } catch (error) {
     next(error);
@@ -110,8 +122,9 @@ router.post(
       });
 
       if (checkedUser) {
-        return res.status(300).json({
+        return res.status(200).json({
           success: false,
+          _id: String(checkedUser._id),
           message: "user Already exist",
         });
       }
@@ -126,10 +139,11 @@ router.post(
         collectionName: "users",
       });
 
-      console.log("createdUser ===> ", createdUser);
+      // console.log("createdUser ===> ", createdUser);
 
       return res.status(201).json({
         success: true,
+        _id: String(createdUser.insertedId),
         message: "user created successfully",
       });
     } catch (error) {
@@ -137,6 +151,53 @@ router.post(
     }
   }
 );
+
+router.post("/login/user", verifyOrigin, async (req, res, next) => {
+  try {
+    // const {displayName, email, photoURL} = req.body;
+    const { name, email, image } = req.body;
+
+    console.log("res ==> ==> ", req.body);
+
+    const checkedUser = await findOne({
+      data: {
+        name,
+        email,
+      },
+      collectionName: "users",
+    });
+
+    let user = null;
+
+    if (!checkedUser) {
+      // create user
+
+      const schema = {
+        name,
+        email,
+        image,
+      };
+      user = await createOne({
+        data: new User(schema),
+        collectionName: "users",
+      });
+      user._id = user.insertedId;
+    } else {
+      user = await findOne({
+        data: { name, email },
+        collectionName: "users",
+      });
+    }
+
+    return res.status(201).json({
+      success: true,
+      _id: String(user._id),
+      message: "Login successful",
+    });
+  } catch (error) {
+    next(error);
+  }
+});
 
 router.post(
   "/create/review",
@@ -190,51 +251,56 @@ router.post(
         message: "Review created!",
       });
     } catch (error) {
+      console.log("Error /create/review => ", error.message);
       next(error);
     }
   }
 );
 
-router.post("/create/comment", async (req, res, next) => {
+router.get("/search/review", async (req, res, next) => {
+  const { searchValue } = req.query;
+
   try {
-    let { name, email, reviewId, comment } = req.body;
+    if (!searchValue) return res.json([]);
 
-    name: name.trim();
-    email: email.trim();
-    comment: comment.trim();
+    // escape special regex chars for safety
+    const escapeRegex = (str) =>
+      str.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
 
-    if (!name || !email || !comment || !reviewId) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Missing required fields" });
-    }
+    const regex = new RegExp(escapeRegex(searchValue), "i");
 
-    const user = await findOne({
-      data: { name, email },
-      collectionName: "users",
+    const query = {
+      $or: [
+        { category: { $regex: regex } },
+        { foodName: { $regex: regex } },
+        { restaurantName: { $regex: regex } },
+        { location: { $regex: regex } },
+        { reviewText: { $regex: regex } },
+      ],
+    };
+
+    const reviews = await find({
+      collectionName: "reviews",
+      data: query,
     });
 
-    if (!user) {
-      return res
-        .status(404)
-        .json({ success: false, message: "User not found" });
+    for (let review of reviews) {
+      let user = await findOne({
+        data: {
+          _id: new ObjectId(review.user),
+        },
+        collectionName: "users",
+      });
+
+      review.user = user;
     }
 
-    const createdComment = await createOne({
-      data: new Comment({
-        user: new ObjectId(user._id),
-        review: new ObjectId(reviewId),
-        comment,
-      }),
-      collectionName: "comments",
-    });
-
-    return res.status(201).json({
+    return res.status(200).json({
       success: true,
-      message: "comment created!",
+      data: reviews,
     });
-  } catch (error) {
-    next(error);
+  } catch (err) {
+    next(err);
   }
 });
 
@@ -300,39 +366,6 @@ router.put("/update/user", async (req, res, next) => {
   } catch (error) {
     next(error);
   }
-});
-
-router.get("/shows/all-comments", async (req, res, next) => {
-  const { reviewId } = req.query;
-
-  if (!reviewId) {
-    return res.status(300).json({
-      success: false,
-      message: reviewId,
-    });
-  }
-
-  const comments = await find({
-    data: {
-      review: new ObjectId(reviewId),
-    },
-    collectionName: "comments",
-  });
-
-  console.log("comments ===> ", comments);
-
-  for (let comment of comments) {
-    let user = await findOne({
-      data: { _id: new ObjectId(comment.user) },
-      collectionName: "users",
-    });
-    comment.user = user;
-  }
-
-  return res.status(200).json({
-    success: true,
-    data: comments,
-  });
 });
 
 router.get("/shows/all-reviews", verifyOrigin, async (req, res, next) => {
@@ -431,17 +464,17 @@ router.get("/shows/loved-reviews", async (req, res, next) => {
 
 router.post("/add/loved-reviews", async (req, res, next) => {
   try {
-    let { name, email, reviewId } = req.body;
+    let { _id, reviewId } = req.body;
 
-    name: name.trim();
-    email: email.trim();
+    // console.log("/add/loved-reviews ==> ", req.body);
 
     const user = await findOne({
-      data: { name, email },
+      data: { _id: new ObjectId(_id) },
       collectionName: "users",
     });
 
     if (!user) {
+      console.log("not found user!");
       return res
         .status(404)
         .json({ success: false, message: "User not found" });
@@ -452,11 +485,12 @@ router.post("/add/loved-reviews", async (req, res, next) => {
     const updateResult = await db
       .collection("reviews")
       .updateOne(
-        { _id: new ObjectId(reviewId), user: new ObjectId(user._id) },
+        { _id: new ObjectId(reviewId) },
         { $addToSet: { loved: new ObjectId(user._id) } }
       );
 
     if (updateResult.modifiedCount === 0) {
+      console.log("fail");
       return res.status(400).json({
         success: false,
         message: "No review updated (maybe already loved or invalid reviewId)",
@@ -564,6 +598,74 @@ router.delete("/remove/reviews", async (req, res, next) => {
       message: "Review deleted successfully",
     });
   } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/shows/all-comments", async (req, res, next) => {
+  try {
+    console.log("/shows/all-comments = ", req.query.review_id);
+
+    const allComments = await find({
+      data: {
+        review: new ObjectId(req.query.review_id),
+      },
+      collectionName: "comments",
+    });
+
+    const newAllComments = [];
+
+    for (let obj of allComments) {
+      let searchUser = await findOne({
+        data: {
+          _id: new ObjectId(obj.user),
+        },
+        collectionName: "users",
+      });
+
+      newAllComments.push({
+        image: searchUser.image,
+        name: searchUser.name,
+        createdAt: obj.createdAt,
+        comment: obj.comment,
+      });
+    }
+
+    console.log("all comments = ", newAllComments);
+
+    return res.status(200).json({
+      success: true,
+      data: newAllComments || [],
+    });
+  } catch (error) {
+    console.log("Error /get/comments => ", error.message);
+    next(error);
+  }
+});
+
+router.post("/create/comments", async (req, res, next) => {
+  try {
+    console.log("/create/comments = ", req?.body);
+
+    const { review_id, user_id, comment } = req.body;
+
+    const createComment = await createOne({
+      data: new Comment({
+        user: new ObjectId(user_id),
+        review: new ObjectId(review_id),
+        comment,
+      }),
+      collectionName: "comments",
+    });
+
+    console.log("comment created => ", createComment);
+
+    return res.status(200).json({
+      success: true,
+      // data: [],
+    });
+  } catch (error) {
+    console.log("Error /create/comments => ", error.message);
     next(error);
   }
 });
