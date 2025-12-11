@@ -4,7 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import verifyOrigin from "../middlewares/allowOrigin.middleware.js";
 import verifyJWTToken from "../middlewares/firebase.jwt.middleware.js";
-
+import { db } from "../connections/mongodb.connection.js";
 import { createOne, find, findOne } from "../utils/mongodbCRUD.js";
 import { ObjectId } from "mongodb";
 import connectDB from "../connections/mongodb.connection.js";
@@ -604,38 +604,45 @@ router.delete("/remove/reviews", async (req, res, next) => {
 
 router.get("/shows/all-comments", async (req, res, next) => {
   try {
-    console.log("/shows/all-comments = ", req.query.review_id);
+    const reviewId = new ObjectId(req.query.review_id);
 
-    const allComments = await find({
-      data: {
-        review: new ObjectId(req.query.review_id),
-      },
-      collectionName: "comments",
-    });
+    const comments = await db
+      .collection("comments")
+      .aggregate([
+        { $match: { review: reviewId } },
+        { $sort: { createdAt: -1 } },
 
-    const newAllComments = [];
-
-    for (let obj of allComments) {
-      let searchUser = await findOne({
-        data: {
-          _id: new ObjectId(obj.user),
+        {
+          $lookup: {
+            from: "users",
+            localField: "user",
+            foreignField: "_id",
+            as: "userData",
+          },
         },
-        collectionName: "users",
-      });
 
-      newAllComments.push({
-        image: searchUser.image,
-        name: searchUser.name,
-        createdAt: obj.createdAt,
-        comment: obj.comment,
-      });
-    }
+        {
+          $unwind: {
+            path: "$userData",
+            preserveNullAndEmptyArrays: true,
+          },
+        },
 
-    console.log("all comments = ", newAllComments);
+        {
+          $project: {
+            _id: 1,
+            comment: 1,
+            createdAt: 1,
+            name: { $ifNull: ["$userData.name", "Unknown User"] },
+            image: { $ifNull: ["$userData.image", null] },
+          },
+        },
+      ])
+      .toArray();
 
     return res.status(200).json({
       success: true,
-      data: newAllComments || [],
+      data: comments,
     });
   } catch (error) {
     console.log("Error /get/comments => ", error.message);

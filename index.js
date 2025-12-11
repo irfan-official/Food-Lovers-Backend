@@ -15,7 +15,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const port = Number(process.env.PORT) || 3000;
+const port = Number(process.env.PORT) || 4000;
 const url =
   process.env.ENVIRONMENT === "local"
     ? `http://localhost:${port}`
@@ -36,6 +36,12 @@ app.use(express.urlencoded({ extended: true }));
 // const frontendPath = path.join(__dirname, "./dist"); // safer: go up 1 level
 // app.use(express.static(frontendPath));
 
+app.get("/", (req, res, next) => {
+  return res.status(200).json({
+    success: true,
+    message: "Server running",
+  });
+});
 app.use("/api/v1/", ApiRouter);
 app.use("/api/v1/send/email/", EmailRouter);
 // app.get("/*", (req, res) => {
